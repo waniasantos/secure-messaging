@@ -5,7 +5,9 @@
 
 Sistema de mensageria multicliente com protocolo de segurança baseado em TLS 1.3.
 
+
 ---
+
 
 ## Sobre o Projeto
 
@@ -22,7 +24,9 @@ Sistema de mensagens seguras onde múltiplos clientes se conectam a um servidor 
 1. **Handshake:** ECDHE + RSA + HKDF (derivação de chaves TLS 1.3)
 2. **Comunicação:** AES-128-GCM com AAD (Associated Authenticated Data)
 
+
 ---
+
 
 ## Pré-requisitos
 
@@ -54,6 +58,7 @@ secure-messaging/
 
 ---
 
+
 ## Como Rodar a Aplicação
 
 ### Passo 1: Gerar Certificado do Servidor
@@ -67,7 +72,6 @@ python3 generate_certs.py
 - `server.key` - Chave privada RSA
 - `server.crt` - Certificado público X.509
 
----
 
 ### Passo 2: Iniciar o Servidor
 
@@ -79,7 +83,6 @@ python3 server.py
 
 **Deixe este terminal aberto.** O servidor ficará rodando e mostrará logs das conexões e mensagens.
 
----
 
 ### Passo 3: Conectar Clientes
 
@@ -100,7 +103,7 @@ python3 client.py fernanda
 ```bash
 python3 client.py ana
 ```
----
+
 
 ### Passo 4: Enviar Mensagens
 
@@ -109,6 +112,9 @@ No terminal de cada cliente, digite mensagens no formato:
 ```
 destinatario:mensagem
 ```
+
+---
+
 
 ## Equipe
 
