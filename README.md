@@ -30,14 +30,14 @@ Sistema de mensagens seguras onde múltiplos clientes se conectam a um servidor 
 
 ## Pré-requisitos
 
-### Python 3.8+
+**Python 3.8+**
 
 Verificar versão:
 ```bash
 python3 --version
 ```
 
-### Biblioteca cryptography
+**Biblioteca cryptography**
 
 Ubuntu/Debian:
 ```bash
@@ -61,7 +61,7 @@ secure-messaging/
 
 ## Como Rodar a Aplicação
 
-### Passo 1: Gerar Certificado do Servidor
+#### Passo 1: Gerar Certificado do Servidor
 
 **Obrigatório antes de iniciar o servidor pela primeira vez.**
 
@@ -73,7 +73,7 @@ python3 generate_certs.py
 - `server.crt` - Certificado público X.509
 
 
-### Passo 2: Iniciar o Servidor
+#### Passo 2: Iniciar o Servidor
 
 Execute:
 
@@ -84,7 +84,7 @@ python3 server.py
 **Deixe este terminal aberto.** O servidor ficará rodando e mostrará logs das conexões e mensagens.
 
 
-### Passo 3: Conectar Clientes
+#### Passo 3: Conectar Clientes
 
 **Cada cliente precisa de um terminal separado.**
 
@@ -92,20 +92,20 @@ python3 server.py
 python3 client.py <nome_client>
 ```
 
-#### Terminal 1 - Cliente Fernanda
+**Terminal 1 - Cliente Fernanda**
 
 ```bash
 python3 client.py fernanda
 ```
 
-#### Terminal 2 - Cliente Ana
+**Terminal 2 - Cliente Ana**
 
 ```bash
 python3 client.py ana
 ```
 
 
-### Passo 4: Enviar Mensagens
+#### Passo 4: Enviar Mensagens
 
 No terminal de cada cliente, digite mensagens no formato:
 
@@ -115,6 +115,11 @@ destinatario:mensagem
 
 ---
 
+## Fluxo do Protocolo (Visão Geral)
+
+![Fluxo do Protocolo (Visão Geral)](docs/diagramaSequencia.png)
+
+---
 
 ## Equipe
 
