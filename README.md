@@ -1,123 +1,106 @@
 # Sistema de Mensageria Segura
 
-**Trabalho de Segurança da Informação**  
+**Trabalho de Segurança**  
 **UFC Campus Quixadá - Prof. Michel Sales Bonfim**
 
-Sistema de mensageria multicliente com protocolo de segurança baseado em TLS 1.3.
-
+Sistema de mensageria multicliente com protocolo de segurança baseado em conceitos do TLS 1.3, utilizando **WebSockets** para comunicação.
 
 ---
-
 
 ## Sobre o Projeto
 
-Sistema de mensagens seguras onde múltiplos clientes se conectam a um servidor central e trocam mensagens criptografadas.
+Sistema de mensagens seguras onde múltiplos clientes se conectam a um servidor central e trocam mensagens criptografadas. O projeto foi atualizado para suportar conexões via **WebSockets**, facilitando o uso com túneis HTTP (como ngrok).
 
-**Garantias de Segurança:**
-- **Confidencialidade** - AES-128-GCM
-- **Integridade** - Tag de autenticação GCM
-- **Autenticidade** - Certificado RSA + Assinatura Digital
-- **Forward Secrecy** - ECDHE (chaves efêmeras)
-- **Anti-Replay** - Números de sequência monotônicos
+### Garantias de Segurança
+- **Confidencialidade**: AES-128-GCM (AEAD).
+- **Integridade**: Tag de autenticação GCM.
+- **Autenticidade**:
+  - Assinatura Digital RSA-PSS (Transcript: `pk_S || client_id || pk_C || salt`).
+  - **Certificate Pinning**: O cliente valida se o certificado do servidor corresponde ao arquivo local.
+- **Forward Secrecy**: ECDHE (Curva SECP256R1), chaves efêmeras por sessão.
+- **Anti-Replay**: Contadores de sequência monotônicos.
+- **Rotação de Chaves**: Chaves renovadas automaticamente a cada 1000 mensagens (HKDF Ratchet).
 
-**Protocolo Implementado:**
-1. **Handshake:** ECDHE + RSA + HKDF (derivação de chaves TLS 1.3)
-2. **Comunicação:** AES-128-GCM com AAD (Associated Authenticated Data)
-
+### Funcionalidades Extras
+- **Validação de ID**: Proteção contra IDs malformados.
+- **Comando `/users`**: Listagem de usuários online.
+- **Suporte a Ngrok**: Conexão simples via internet através de túneis HTTP/TCP.
 
 ---
 
-
 ## Pré-requisitos
 
-**Python 3.8+**
+### Python 3.8+ e Dependências
 
-Verificar versão:
+Instale as bibliotecas necessárias:
 ```bash
-python3 --version
+pip install -r requirements.txt
+```
+*(Requer `cryptography` e `websockets`)*
+
+---
+
+## Como Rodar a Aplicação
+
+#### Passo 1: Gerar Certificado do Servidor
+
+**Obrigatório.** Gera as chaves RSA e o certificado usado para autenticação e pinning.
+
+```bash
+python3 generate_certs.py
+```
+**Arquivos gerados:** `server.key` (Chave Privada) e `server.crt` (Certificado Público).
+
+#### Passo 2: Iniciar o Servidor
+
+```bash
+python3 server.py --host 127.0.0.1 --port 8888
+```
+*Argumentos opcionais: `--host` e `--port`.*
+
+#### Passo 3: Conectar Clientes
+
+**Importante**: O arquivo `server.crt` deve estar na mesma pasta onde o `client.py` for executado.
+
+**Localmente:**
+```bash
+python3 client.py alice
 ```
 
-**Biblioteca cryptography**
+**Via Ngrok (Internet):**
+1. Inicie o ngrok: `ngrok tcp 8888`
+2. Copie o endereço (ex: `0.tcp.ngrok.io:12345`).
+3. No cliente remoto (com o `server.crt` copiado):
+   ```bash
+   python3 client.py bob --host 0.tcp.ngrok.io --port 12345
+   ```
 
-Ubuntu/Debian:
-```bash
-sudo apt install python3-cryptography
+### Passo 4: Troca de Mensagens
+
+No terminal do cliente, digite:
 ```
+destinatario:mensagem
+```
+Exemplo: `bob:Olá, tudo bem?`
+
+Comandos especiais:
+- `/users`: Lista quem está online.
+- `sair`: Encerra a conexão.
+
 ---
 
 ## Estrutura do Projeto
 
 ```
 secure-messaging/
-├── crypto_utils.py      # Funções criptográficas (ECDHE, RSA, HKDF, AES-GCM)
-├── generate_certs.py    # Gerador de certificado RSA autoassinado
-├── server.py            # Servidor de mensageria
-├── client.py            # Cliente interativo
+├── crypto_utils.py      # Primitivas criptográficas (ECDHE, RSA, HKDF, AES-GCM)
+├── generate_certs.py    # Gerador de certificado RSA
+├── server.py            # Servidor WebSocket 
+├── client.py            # Cliente WebSocket Interativo
+├── server.crt           # Certificado público
+├── server.key           # Chave privada 
 └── README.md            
 ```
-
----
-
-
-## Como Rodar a Aplicação
-
-#### Passo 1: Gerar Certificado do Servidor
-
-**Obrigatório antes de iniciar o servidor pela primeira vez.**
-
-```bash
-python3 generate_certs.py
-```
-**Arquivos gerados:**
-- `server.key` - Chave privada RSA
-- `server.crt` - Certificado público X.509
-
-
-#### Passo 2: Iniciar o Servidor
-
-Execute:
-
-```bash
-python3 server.py
-```
-
-**Deixe este terminal aberto.** O servidor ficará rodando e mostrará logs das conexões e mensagens.
-
-
-#### Passo 3: Conectar Clientes
-
-**Cada cliente precisa de um terminal separado.**
-
-```bash
-python3 client.py <nome_client>
-```
-
-**Terminal 1 - Cliente Fernanda**
-
-```bash
-python3 client.py fernanda
-```
-
-**Terminal 2 - Cliente Ana**
-
-```bash
-python3 client.py ana
-```
-
-
-#### Passo 4: Enviar Mensagens
-
-No terminal de cada cliente, digite mensagens no formato:
-
-```
-destinatario:mensagem
-```
-
----
-
-## Fluxo do Protocolo (Visão Geral)
-
-![Fluxo do Protocolo (Visão Geral)](docs/diagramaSequencia.png)
 
 ---
 

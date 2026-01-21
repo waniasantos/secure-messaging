@@ -58,7 +58,14 @@ class Crypto:
         key_c2s = Crypto.hkdf_expand(prk, "c2s", 16)
         key_s2c = Crypto.hkdf_expand(prk, "s2c", 16)
         
+
         return key_c2s, key_s2c
+    
+    @staticmethod
+    def rotate_key(current_key):
+       
+       return Crypto.hkdf_expand(current_key, "rotation", 16)
+
     
     
     @staticmethod
