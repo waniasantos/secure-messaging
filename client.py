@@ -2,27 +2,47 @@ import asyncio
 import os
 import struct
 import sys
+import re
+import argparse
+import websockets
 from crypto_utils import Crypto
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
 
+class SecureMessagingClient:
+    MAX_MESSAGE_SIZE = 4096
+    ROTATION_INTERVAL = 1000
 
-class SecureMessagingClient:    
     def __init__(self, client_id):
         self.client_id = client_id
-        self.reader = None
-        self.writer = None
-        self.key_c2s = None  # cliente >> servidor
-        self.key_s2c = None  # servidor >> cliente
+        self.websocket = None
+        self.key_c2s = None
+        self.key_s2c = None
         self.seq_send = 0
         self.seq_recv = 0
+        self.salt = None
+        self.pinned_cert_bytes = None
     
-    async def connect(self, host='127.0.0.1', port=8888):
+    def load_pinned_cert(self):
         try:
-            self.reader, self.writer = await asyncio.open_connection(host, port)
-            
-            print(f"[CONEXAO] Conectando como '{self.client_id}'...")
+            with open("server.crt", "rb") as f:
+                self.pinned_cert_bytes = f.read()
+        except FileNotFoundError:
+            print("[ERRO] 'server.crt' não encontrado no diretório atual.")
+            return False
+        return True
 
+    async def connect(self, uri):
+        if not self.load_pinned_cert():
+            return False
+
+        try:
+            print(f"[CONEXAO] Conectando a {uri}...")
+            # Conexão WebSocket
+            self.websocket = await websockets.connect(uri)
+            
+            print(f"[HANDSHAKE] Enviando Hello...")
             sk_client, pk_client = Crypto.generate_ecdhe_keypair()
             pk_client_bytes = Crypto.serialize_public_key(pk_client)
             
@@ -32,38 +52,37 @@ class SecureMessagingClient:
                 pk_client_bytes
             )
             
-            self.writer.write(message)
-            await self.writer.drain()
+            await self.websocket.send(message)
             
-            data = await self.reader.read(4096)
+            # Aguardar resposta (Server Hello)
+            data = await self.websocket.recv()
             
             offset = 0
-
-            # pk_servidor (65 bytes)
             pk_len = struct.unpack('!H', data[offset:offset+2])[0]
             offset += 2
             pk_server_bytes = data[offset:offset+pk_len]
             offset += pk_len
             
-            # certificado X.509
             cert_len = struct.unpack('!H', data[offset:offset+2])[0]
             offset += 2
             cert_bytes = data[offset:offset+cert_len]
             offset += cert_len
             
-            # assinatura RSA-PSS
             sig_len = struct.unpack('!H', data[offset:offset+2])[0]
             offset += 2
             signature = data[offset:offset+sig_len]
             offset += sig_len
             
-            # salt para HKDF (32 bytes)
-            salt = data[offset:offset+32]
+            self.salt = data[offset:offset+32]
+            
+            if cert_bytes != self.pinned_cert_bytes:
+                print("[FATAL] Certificado do servidor diferente do local (Pinning falhou)!")
+                return False
             
             certificate = x509.load_pem_x509_certificate(cert_bytes)
             server_public_key = certificate.public_key()
             
-            transcript = pk_server_bytes + pk_client_bytes + self.client_id.encode() + salt
+            transcript = pk_server_bytes + self.client_id.encode() + pk_client_bytes + self.salt
             
             if not Crypto.verify_rsa(server_public_key, signature, transcript):
                 print("[ERRO] Assinatura RSA inválida!")
@@ -74,7 +93,7 @@ class SecureMessagingClient:
             pk_server = Crypto.deserialize_public_key(pk_server_bytes)
             shared_secret = Crypto.compute_shared_secret(sk_client, pk_server)
             
-            self.key_c2s, self.key_s2c = Crypto.derive_tls13_keys(shared_secret, salt)
+            self.key_c2s, self.key_s2c = Crypto.derive_tls13_keys(shared_secret, self.salt)
             
             print(f"[OK] Chaves derivadas com HKDF")
             print(f"[OK] Sessão segura estabelecida\n")
@@ -86,9 +105,18 @@ class SecureMessagingClient:
             return False
     
     async def send_message(self, recipient, message):
+        encoded_msg = message.encode('utf-8')
+        if len(encoded_msg) > self.MAX_MESSAGE_SIZE:
+             print(f"[ERRO] Mensagem muito grande")
+             return
+
         self.seq_send += 1
         
-        nonce = os.urandom(12)
+        if self.seq_send > 0 and self.seq_send % self.ROTATION_INTERVAL == 0:
+            print(f"[ROTACAO] Atualizando chave de envio...")
+            self.key_c2s = Crypto.rotate_key(self.key_c2s)
+
+        nonce = self.salt[:4] + struct.pack('!Q', self.seq_send)
         
         aad = (
             self.client_id.encode('utf-8').ljust(16, b'\x00') +
@@ -99,7 +127,7 @@ class SecureMessagingClient:
         ciphertext = Crypto.encrypt_aes_gcm(
             self.key_c2s,
             nonce,
-            message,
+            encoded_msg,
             aad
         )
         
@@ -111,19 +139,22 @@ class SecureMessagingClient:
             ciphertext
         )
         
-        self.writer.write(struct.pack('!I', len(frame)) + frame)
-        await self.writer.drain()
+
+        try:
+            await self.websocket.send(frame)
+        except Exception as e:
+            print(f"[ERRO] Falha ao enviar: {e}")
+            return
+
         
-        print(f"[ENVIO] Enviado para {recipient}: {message}")
+        if recipient == "__SERVER__":
+            print(f"(Comando enviado ao sistema)")
+        else:
+            print(f"[ENVIO] Enviado para {recipient}: {message}")
     
     async def receive_messages(self):
         try:
-            while True:
-                size_bytes = await self.reader.readexactly(4)
-                frame_size = struct.unpack('!I', size_bytes)[0]
-                
-                frame = await self.reader.readexactly(frame_size)
-                
+            async for frame in self.websocket:
                 nonce = frame[:12]
                 sender = frame[12:28].decode('utf-8').rstrip('\x00')
                 recipient = frame[28:44].decode('utf-8').rstrip('\x00')
@@ -131,11 +162,14 @@ class SecureMessagingClient:
                 ciphertext = frame[52:]
                 
                 if seq_no <= self.seq_recv:
-                    print(f"[AVISO] Mensagem antiga ignorada (seq {seq_no})")
                     continue
                 
                 self.seq_recv = seq_no
                 
+                if seq_no > 0 and seq_no % self.ROTATION_INTERVAL == 0:
+                    print(f"[ROTACAO] Atualizando chave de recebimento...")
+                    self.key_s2c = Crypto.rotate_key(self.key_s2c)
+
                 aad = (
                     sender.encode('utf-8').ljust(16, b'\x00') +
                     recipient.encode('utf-8').ljust(16, b'\x00') +
@@ -150,26 +184,29 @@ class SecureMessagingClient:
                         aad
                     ).decode('utf-8')
                     
-                    print(f"\n[RECEBIMENTO] {sender}: {plaintext}")
+                    if sender == "__SERVER__":
+                        print(f"\n[SISTEMA] {plaintext}")
+                    else:
+                        print(f"\n[RECEBIMENTO] {sender}: {plaintext}")
+                    
                     print(f"({self.client_id})> ", end='', flush=True)
                     
                 except Exception as e:
                     print(f"\n[ERRO] Falha ao decifrar: {e}")
-                    
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            print(f"\n[ERRO] Falha ao receber: {e}")
+
+        except websockets.exceptions.ConnectionClosed:
+           print("\n[CONEXAO] Servidor desconectou.")
     
     async def interactive_mode(self):
         receive_task = asyncio.create_task(self.receive_messages())
         
         print("="*60)
-        print("MODO INTERATIVO")
+        print("MODO INTERATIVO (WebSocket)")
         print("="*60)
         print("Formato: destinatario:mensagem")
         print("Exemplo: alice:Oi, tudo bem?")
-        print("Digite 'sair' para encerrar\n")
+        print("Comandos: /users, sair")
+        print("="*60 + "\n")
         
         try:
             while True:
@@ -180,55 +217,58 @@ class SecureMessagingClient:
                     f"({self.client_id})> "
                 )
                 
+                user_input = user_input.strip()
+                if not user_input: continue
+
                 if user_input.lower() in ['sair', 'exit', 'quit']:
-                    print("Encerrando...")
                     break
                 
+                if user_input.lower() == '/users':
+                    await self.send_message("__SERVER__", "/users")
+                    continue
+                
                 if ':' not in user_input:
-                    print("[AVISO] Formato incorreto. Use: destinatario:mensagem")
+                    print("[AVISO] Use: destinatario:mensagem")
                     continue
                 
                 recipient, message = user_input.split(':', 1)
-                recipient = recipient.strip()
-                message = message.strip()
-                
-                if not message:
-                    print("[AVISO] Mensagem vazia")
-                    continue
-                
-                await self.send_message(recipient, message)
+                await self.send_message(recipient.strip(), message.strip())
                 
         except KeyboardInterrupt:
-            print("\n\nInterrompido pelo usuário")
+            pass
             
         finally:
             receive_task.cancel()
-            self.writer.close()
-            await self.writer.wait_closed()
+            await self.websocket.close()
 
 
 async def main():
-    if len(sys.argv) < 2:
-        print("="*60)
-        print("[ERRO] ID do cliente não fornecido")
-        print("="*60)
-        print("Uso: python client.py <seu_id>")
-        print("Exemplo: python client.py alice\n")
+    parser = argparse.ArgumentParser(description="Cliente de Mensageria Segura (WebSockets)")
+    parser.add_argument("client_id", help="ID do cliente")
+    parser.add_argument("--host", default="127.0.0.1", help="Host (padrão: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8888, help="Porta (padrão: 8888)")
+    parser.add_argument("--wss", action="store_true", help="Usar WebSockets Seguro (wss://) - Necessário para ngrok https")
+    
+    args = parser.parse_args()
+    
+    if not re.match(r'^[a-zA-Z0-9_-]{1,16}$', args.client_id):
+        print(f"[ERRO] ID inválido")
         return
     
-    client_id = sys.argv[1]
+    protocol = "wss" if args.wss else "ws"
+    uri = f"{protocol}://{args.host}:{args.port}"
     
-    if len(client_id) > 16:
-        print(f"[ERRO] ID muito longo (máximo 16 caracteres)")
-        return
+    # Se o host já tiver schema, usa ele
+    if "://" in args.host:
+        uri = args.host
     
-    client = SecureMessagingClient(client_id)
+    client = SecureMessagingClient(args.client_id)
     
-    if await client.connect():
+    if await client.connect(uri):
         await client.interactive_mode()
-    else:
-        print("[ERRO] Falha na conexão com o servidor")
-
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

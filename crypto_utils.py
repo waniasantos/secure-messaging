@@ -58,7 +58,16 @@ class Crypto:
         key_c2s = Crypto.hkdf_expand(prk, "c2s", 16)
         key_s2c = Crypto.hkdf_expand(prk, "s2c", 16)
         
+
         return key_c2s, key_s2c
+    
+    @staticmethod
+    def rotate_key(current_key):
+        # Deriva nova chave a partir da atual usando HKDF-Expand
+        # Isso cria uma "ratchet" simples (Forward Secrecy para futuras chaves se a antiga vazar? 
+        # Não exatamente, pois a nova depende da antiga. Mas serve para limitar o uso de uma mesma chave AES.)
+        return Crypto.hkdf_expand(current_key, "rotation", 16)
+
     
     
     @staticmethod
