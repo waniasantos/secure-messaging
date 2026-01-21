@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 ## Como Rodar a Aplicação
 
-### Passo 1: Gerar Certificado do Servidor
+#### Passo 1: Gerar Certificado do Servidor
 
 **Obrigatório.** Gera as chaves RSA e o certificado usado para autenticação e pinning.
 
@@ -51,14 +51,14 @@ python3 generate_certs.py
 ```
 **Arquivos gerados:** `server.key` (Chave Privada) e `server.crt` (Certificado Público).
 
-### Passo 2: Iniciar o Servidor
+#### Passo 2: Iniciar o Servidor
 
 ```bash
 python3 server.py --host 127.0.0.1 --port 8888
 ```
 *Argumentos opcionais: `--host` e `--port`.*
 
-### Passo 3: Conectar Clientes
+#### Passo 3: Conectar Clientes
 
 **Importante**: O arquivo `server.crt` deve estar na mesma pasta onde o `client.py` for executado.
 
