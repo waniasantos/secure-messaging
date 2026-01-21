@@ -93,14 +93,18 @@ Comandos especiais:
 
 ```
 secure-messaging/
+├── requirements.txt     # Bibliotecas utilizadas 
 ├── crypto_utils.py      # Primitivas criptográficas (ECDHE, RSA, HKDF, AES-GCM)
 ├── generate_certs.py    # Gerador de certificado RSA
 ├── server.py            # Servidor WebSocket 
-├── client.py            # Cliente WebSocket Interativo
-├── server.crt           # Certificado público
-├── server.key           # Chave privada 
-└── README.md            
+└── client.py            # Cliente WebSocket Interativo         
 ```
+
+---
+
+## Fluxo do Protocolo (Visão Geral)
+
+![Fluxo do Protocolo (Visão Geral)](docs/diagramaSequencia_fluxoProtocolo.png)
 
 ---
 
